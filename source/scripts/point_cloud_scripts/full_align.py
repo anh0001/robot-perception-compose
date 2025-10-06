@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 import os
@@ -234,9 +235,52 @@ def save_ndarray(path: str, array: np.ndarray) -> None:
         f.write(save_string)
 
 
-def main() -> None:
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Prepare an OpenMask3D-compatible scene from iPhone LiDAR captures."
+        )
+    )
+    parser.add_argument(
+        "--config",
+        default="config",
+        help="Config name in configs/ (without extension).",
+    )
+    parser.add_argument(
+        "--scan-name",
+        default=None,
+        help="Override the configured high_res scan folder name.",
+    )
+    parser.add_argument(
+        "--skip-autowalk",
+        action="store_true",
+        help="Skip alignment with low-res autowalk point cloud (iPhone-only mode).",
+    )
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        help="Show intermediate visualizations for debugging.",
+    )
+    return parser.parse_args(argv)
+
+
+def _normalize_config_name(name: str) -> str:
+    name = name.strip()
+    if name.endswith(".yaml"):
+        name = name[:-5]
+    if name.startswith("configs/"):
+        name = name[len("configs/") :]
+    return name
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+
     # paths
-    config = recursive_config.Config()
+    config_name = _normalize_config_name(args.config)
+    config = recursive_config.Config(config_name)
+    if args.scan_name:
+        config["pre_scanned_graphs"]["high_res"] = args.scan_name
     directory_path = config.get_subpath("prescans")
     directory_path = os.path.join(
         str(directory_path), config["pre_scanned_graphs"]["high_res"]
@@ -268,29 +312,33 @@ def main() -> None:
     # get point clouds
     mesh_ground = o3d.io.read_triangle_mesh(mesh_path, True)
     scan_ground = o3d.io.read_point_cloud(pcd_path)
-    # o3d.visualization.draw_geometries([mesh_ground])
-
-    autowalk_ply_path = config.get_subpath("point_clouds")
-    autowalk_ply_path = os.path.join(
-        str(autowalk_ply_path), f'{config["pre_scanned_graphs"]["low_res"]}.ply'
-    )
-    autowalk_cloud = o3d.io.read_point_cloud(str(autowalk_ply_path))
-    draw_point_clouds(scan_ground, autowalk_cloud)
+    if not args.skip_autowalk:
+        autowalk_ply_path = config.get_subpath("point_clouds")
+        autowalk_ply_path = os.path.join(
+            str(autowalk_ply_path), f'{config["pre_scanned_graphs"]["low_res"]}.ply'
+        )
+        autowalk_cloud = o3d.io.read_point_cloud(str(autowalk_ply_path))
+        if args.visualize:
+            draw_point_clouds(scan_ground, autowalk_cloud)
+    else:
+        autowalk_cloud = None
 
     scan_fiducial = copy.deepcopy(scan_ground).transform(fiducial_tform_ground)
-    # scan_vis = add_coordinate_system(
-    #     scan_fiducial, (0, 255, 0), np.asarray((0, 0, 0)), size=2
-    # )
-    # o3d.visualization.draw_geometries([scan_vis])
 
-    draw_point_clouds(scan_fiducial, autowalk_cloud)
-    fiducial_tform_icp = icp(scan_fiducial, autowalk_cloud, threshold=0.15)
-    icp_tform_fiducial = np.linalg.inv(fiducial_tform_icp)
-    scan_icp = copy.deepcopy(scan_fiducial).transform(icp_tform_fiducial)
-    draw_point_clouds(scan_icp, autowalk_cloud)
+    if not args.skip_autowalk:
+        if args.visualize:
+            draw_point_clouds(scan_fiducial, autowalk_cloud)
+        fiducial_tform_icp = icp(scan_fiducial, autowalk_cloud, threshold=0.15)
+        icp_tform_fiducial = np.linalg.inv(fiducial_tform_icp)
+        scan_icp = copy.deepcopy(scan_fiducial).transform(icp_tform_fiducial)
+        if args.visualize:
+            draw_point_clouds(scan_icp, autowalk_cloud)
+        icp_tform_ground = icp_tform_fiducial @ fiducial_tform_ground
+    else:
+        icp_tform_fiducial = np.eye(4)
+        scan_icp = copy.deepcopy(scan_fiducial)
+        icp_tform_ground = fiducial_tform_ground
 
-    # get full transformation_matrix
-    icp_tform_ground = icp_tform_fiducial @ fiducial_tform_ground
     mesh_icp = mesh_ground.transform(icp_tform_ground)
 
     # o3d.visualization.draw_geometries([mesh_icp, scan_icp])
@@ -368,7 +416,8 @@ def main() -> None:
     o3d.io.write_point_cloud(cloud_save_path, scan_icp)
     o3d.io.write_triangle_mesh(mesh_save_path, mesh_icp)
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
-    sys.exit(0)
+    raise SystemExit(main())

@@ -1,7 +1,12 @@
+"""Utilities for working with the OpenMask3D segmentation server."""
+
+from __future__ import annotations
+
 import json
 import os
 import shutil
 import zipfile
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -32,60 +37,134 @@ def zip_point_cloud(path: str) -> str:
     return output_filename
 
 
-def get_mask_clip_features() -> None:
-    # CONSTANTS
-    PORT = 5001
-    SAVE_PATH = "./tmp"
+def _build_server_url(config: Config) -> str:
+    """Compose the OpenMask3D server URL from the configuration."""
 
-    config = recursive_config.Config()
-    directory_path = config.get_subpath("aligned_point_clouds")
-    ending = config["pre_scanned_graphs"]["high_res"]
-    directory_path = os.path.join(str(directory_path), ending)
-    zipfile = zip_point_cloud(directory_path)
+    server_cfg = config["servers"]["openmask"]
+    ip = server_cfg.get("ip", "127.0.0.1")
+    port = server_cfg.get("port", 5001)
+    route = server_cfg.get("route", "openmask/save_and_predict").lstrip("/")
+    return f"http://{ip}:{port}/{route}"
 
-    kwargs = {
-        "name": ("str", ending),
-        "overwrite": ("bool", True),
-        "scene_intrinsic_resolution": ("str", "[1440,1920]"),
-        # "scene_intrinsic_resolution": ("str", "[968,1296]"),
+
+def _features_directory(config: Config, scan_name: str) -> Path:
+    base_path = Path(config.get_subpath("openmask_features"))
+    return base_path / scan_name
+
+
+def _features_exist(directory: Path) -> bool:
+    expected = {
+        directory / "clip_features.npy",
+        directory / "scene_MASKS.npy",
+        directory / "clip_features_comp.npy",
+        directory / "scene_MASKS_comp.npy",
     }
-    server_address = f"http://localhost:{PORT}/openmask/save_and_predict"
-    with open(zipfile, "rb") as f:
+    return all(path.exists() for path in expected)
+
+
+def get_mask_clip_features(
+    config: Config | None = None,
+    *,
+    overwrite: bool = True,
+    timeout: int = 900,
+) -> Path:
+    """Request mask proposals and CLIP features from the OpenMask3D server.
+
+    Args:
+        config: Optional config object (defaults to recursive Config).
+        overwrite: Whether to overwrite existing cached features.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Path to the directory containing the cached features.
+    """
+
+    if config is None:
+        config = recursive_config.Config()
+
+    scan_name = config["pre_scanned_graphs"]["high_res"]
+    scene_root = Path(config.get_subpath("aligned_point_clouds"))
+    directory_path = scene_root / scan_name
+    if not directory_path.exists():
+        raise FileNotFoundError(
+            f"OpenMask scene folder not found: {directory_path}."
+        )
+
+    save_dir = _features_directory(config, scan_name)
+    if not overwrite and _features_exist(save_dir):
+        return save_dir
+
+    zip_path = Path(zip_point_cloud(str(directory_path)))
+
+    params = {
+        "name": ("str", scan_name),
+        "overwrite": ("bool", overwrite),
+        "scene_intrinsic_resolution": ("str", "[1440,1920]"),
+    }
+    server_address = _build_server_url(config)
+    tmp_dir = Path(config.get_subpath("tmp"))
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    with zip_path.open("rb") as file_handle:
         try:
             response = requests.post(
-                server_address, files={"scene": f}, params=kwargs, timeout=900
+                server_address,
+                files={"scene": file_handle},
+                params=params,
+                timeout=timeout,
             )
-        except ReadTimeoutError:
-            print("Request timed out!")
-            return
+        except ReadTimeoutError as exc:
+            raise TimeoutError("OpenMask request timed out") from exc
 
-    if response.status_code == 200:  # fail
-        contents = _get_content(response, SAVE_PATH)
+    if response.status_code == 200:
+        contents = _get_content(response, tmp_dir)
     else:
         message = json.loads(response.content)
-        print(f"{message['error']}", f"Status code: {response.status_code}", sep="\n")
-        return
+        raise RuntimeError(
+            f"OpenMask server error ({response.status_code}): {message.get('error')}"
+        )
 
-    features = contents["clip_features"]
-    masks = contents["scene_MASKS"]
+    save_dir.mkdir(parents=True, exist_ok=True)
+    feature_path = save_dir / "clip_features.npy"
+    mask_path = save_dir / "scene_MASKS.npy"
+    np.save(feature_path, contents["clip_features"])
+    np.save(mask_path, contents["scene_MASKS"])
 
-    save_path = config.get_subpath("openmask_features")
-    save_path = os.path.join(save_path, ending)
-    os.makedirs(save_path, exist_ok=False)
-    feature_path = os.path.join(str(save_path), "clip_features.npy")
-    mask_path = os.path.join(str(save_path), "scene_MASKS.npy")
-    np.save(feature_path, features)
-    np.save(mask_path, masks)
-
-    # make unique
+    features = np.load(feature_path)
+    masks = np.load(mask_path)
     features, feat_idx = np.unique(features, axis=0, return_index=True)
     masks = masks[:, feat_idx]
     masks, mask_idx = np.unique(masks, axis=1, return_index=True)
     features = features[mask_idx]
-    feature_compressed_path = os.path.join(str(save_path), "clip_features_comp.npy")
-    mask_compressed_path = os.path.join(str(save_path), "scene_MASKS_comp.npy")
-    np.save(feature_compressed_path, features)
-    np.save(mask_compressed_path, masks)
+
+    np.save(save_dir / "clip_features_comp.npy", features)
+    np.save(save_dir / "scene_MASKS_comp.npy", masks)
+
+    try:
+        zip_path.unlink()
+    except FileNotFoundError:
+        pass
+
+    return save_dir
+
+
+def ensure_mask_clip_features(
+    config: Config | None = None,
+    *,
+    recompute: bool = False,
+) -> Path:
+    """Make sure OpenMask3D features exist locally and return their directory."""
+
+    if config is None:
+        config = recursive_config.Config()
+
+    scan_name = config["pre_scanned_graphs"]["high_res"]
+    save_dir = _features_directory(config, scan_name)
+
+    if recompute or not _features_exist(save_dir):
+        return get_mask_clip_features(config=config, overwrite=True)
+
+    return save_dir
 
 
 def get_mask_points(item: str, config, idx: int = 0, vis_block: bool = False):
