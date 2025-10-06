@@ -2,6 +2,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
+AGENTS.md
+CLAUDE.md
+copilot-instructions.md
 
 # C extensions
 *.so
