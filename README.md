@@ -1,4 +1,4 @@
-# iPhone LiDAR 3D Segmentation
+# Text-Driven 3D Scene Segmentation
 
 This repository is a streamlined fork of the Spot-Compose codebase focused solely on open-vocabulary 3D segmentation from iPhone LiDAR scans. The robot control stack, grasp planning, and drawer manipulation routines were removed; what remains is the tooling necessary to:
 
@@ -95,20 +95,6 @@ python3 app.py
 ```
 
 **VS Code Task**: `Launch OpenMask3D Server (GPU)`
-
-### CPU Fallback (No GPU Available)
-
-If you don't have an NVIDIA GPU or can't install the Container Toolkit (e.g., on macOS):
-
-```bash
-docker run -p 5001:5001 -it craiden/openmask:v1.0
-# inside the container
-python3 app.py
-```
-
-**VS Code Task**: `Launch OpenMask3D Server (CPU Fallback)`
-
-⚠️ **Note**: CPU inference is significantly slower (~10-50x depending on scene complexity).
 
 Keep the server running while issuing segmentation queries.
 
