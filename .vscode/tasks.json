@@ -2,11 +2,34 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Prepare OpenMask3D Scene",
+      "label": "Prepare OpenMask3D Scene (my_desk)",
       "type": "shell",
-      "command": "DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc 'source ~/miniconda3/bin/activate spot_env && python -m scripts.point_cloud_scripts.full_align --scan-name ${input:scanName} --skip-autowalk --visualize 2>&1 | tee openmask3d_scene_prep.log'\" &",
+      "command": "source ~/miniconda3/bin/activate spot_env && python -m scripts.point_cloud_scripts.full_align --scan-name my_desk --skip-autowalk",
       "problemMatcher": [],
-      "detail": "Prepare an OpenMask3D Scene - The preparation script reprojects the iPhone capture into the folder structure expected by OpenMask3D. Output folder: data/aligned_point_clouds/<scan-name>/, containing pose/, color/, depth/, intrinsic/, scene.ply, and mesh.obj.",
+      "detail": "Prepare OpenMask3D scene for my_desk scan",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "options": {
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-ic"
+          ]
+        }
+      }
+    },
+    {
+      "label": "Launch OpenMask3D Server (GPU)",
+      "type": "shell",
+      "command": "source ~/miniconda3/bin/activate spot_env && docker pull craiden/openmask:v1.0 && docker run -p 5001:5001 --gpus all -it craiden/openmask:v1.0 bash -lc \"python3 app.py\"",
+      "problemMatcher": [],
+      "detail": "Pull the OpenMask3D image and start the segmentation server with GPU acceleration. Requires NVIDIA Container Toolkit (run 'Check GPU Docker Setup' first).",
       "presentation": {
         "echo": true,
         "reveal": "never",
@@ -25,11 +48,11 @@
       }
     },
     {
-      "label": "Prepare OpenMask3D Scene (my_desk)",
+      "label": "Run Text Segment 3D (my_desk laptop)",
       "type": "shell",
-      "command": "source ~/miniconda3/bin/activate spot_env && python -m scripts.point_cloud_scripts.full_align --scan-name my_desk --skip-autowalk",
+      "command": "DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc 'source ~/miniconda3/bin/activate spot_env && python -m scripts.temp_scripts.text_segment_3d --item \\\"laptop\\\" --scan-name my_desk'\" &",
       "problemMatcher": [],
-      "detail": "Prepare OpenMask3D scene for my_desk scan",
+      "detail": "Run the text_segment_3d temp script for the laptop on the my_desk scan using display :77.",
       "presentation": {
         "echo": true,
         "reveal": "always",

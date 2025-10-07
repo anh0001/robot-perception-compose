@@ -66,7 +66,22 @@ Output folder: `data/aligned_point_clouds/<scan-name>/`, containing `pose/`, `co
 
 ## 4. Launch the OpenMask3D Server
 
-Use the published Docker image (requires an NVIDIA GPU with drivers exposed to Docker):
+### GPU Setup (Recommended)
+
+The OpenMask3D server runs best with GPU acceleration. First, verify your setup:
+
+```bash
+bash scripts/setup_gpu_docker.sh
+```
+
+This diagnostic script checks:
+- NVIDIA driver installation (`nvidia-smi`)
+- Docker GPU access
+- NVIDIA Container Toolkit configuration
+
+If the toolkit is missing, the script offers automatic installation.
+
+Once verified, launch the server:
 
 ```bash
 docker pull craiden/openmask:v1.0
@@ -74,6 +89,22 @@ docker run -p 5001:5001 --gpus all -it craiden/openmask:v1.0
 # inside the container
 python3 app.py
 ```
+
+**VS Code Task**: `Launch OpenMask3D Server (GPU)`
+
+### CPU Fallback (No GPU Available)
+
+If you don't have an NVIDIA GPU or can't install the Container Toolkit (e.g., on macOS):
+
+```bash
+docker run -p 5001:5001 -it craiden/openmask:v1.0
+# inside the container
+python3 app.py
+```
+
+**VS Code Task**: `Launch OpenMask3D Server (CPU Fallback)`
+
+⚠️ **Note**: CPU inference is significantly slower (~10-50x depending on scene complexity).
 
 Keep the server running while issuing segmentation queries.
 
