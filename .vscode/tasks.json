@@ -48,11 +48,11 @@
       }
     },
     {
-      "label": "Run Text Segment 3D (my_desk laptop)",
+      "label": "Run Text Segment 3D (my_desk object_name)",
       "type": "shell",
       "command": "DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc 'source ~/miniconda3/bin/activate spot_env && python -m scripts.temp_scripts.text_segment_3d --item \\\"laptop\\\" --scan-name my_desk'\" &",
       "problemMatcher": [],
-      "detail": "Run the text_segment_3d temp script for the laptop on the my_desk scan using display :77.",
+      "detail": "Run the text_segment_3d temp script for the object_name on the my_desk scan using display :77.",
       "presentation": {
         "echo": true,
         "reveal": "always",

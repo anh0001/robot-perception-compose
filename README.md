@@ -30,6 +30,10 @@ Use the [3D Scanner App](https://apps.apple.com/us/app/3d-scanner-app/id14199139
 > - Allow processing time up to about 30 minutes; that is typically fine.
 >   Longer than ~30 minutes often causes the app to crash. Aim for the most
 >   detailed settings that your iPhone can process reliably within this time.
+> - Hold the iPhone in portrait orientation throughout capture to keep
+>   poses consistent across frames.
+> - Before exporting, use the app's crop tool to remove unnecessary
+>   background/points so downstream processing is cleaner and faster.
 
 1. Export **All Data** and **Point Cloud/PLY** (High Density, `Z axis up` disabled).
 2. Create a folder `data/prescans/<scan-name>/` and unzip *All Data* there.
