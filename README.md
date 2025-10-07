@@ -22,6 +22,15 @@ The repo targets Python 3.8 and depends on Open3D, PyTorch, Transformers (for CL
 
 Use the [3D Scanner App](https://apps.apple.com/us/app/3d-scanner-app/id1419913995) and keep an AprilTag or another stable reference in view.
 
+> Note on 3D Scanner settings
+> - Use "Normal" mode (default LiDAR) for capture.
+> - After finishing the scan, process the textured data using "Custom".
+> - Set a small voxel size and set "Simplify" to the lower option to
+>   preserve as much detail as possible.
+> - Allow processing time up to about 30 minutes; that is typically fine.
+>   Longer than ~30 minutes often causes the app to crash. Aim for the most
+>   detailed settings that your iPhone can process reliably within this time.
+
 1. Export **All Data** and **Point Cloud/PLY** (High Density, `Z axis up` disabled).
 2. Create a folder `data/prescans/<scan-name>/` and unzip *All Data* there.
 3. Rename the exported PLY file to `pcd.ply` and place it inside the same folder.

@@ -80,7 +80,14 @@ def get_best_detection(jpg_json_paths, tag_id: int):
     for frame_nr, jpg_json_dict in jpg_json_paths.items():
         print(f"Checking Detection #{frame_nr}!", end="\n")
         # get data (image and camera intrinsics)
-        jpg_path = jpg_json_dict["jpg"]
+        jpg_path = jpg_json_dict.get("jpg")
+        json_path = jpg_json_dict.get("json")
+        if not jpg_path or not json_path:
+            print(
+                f"Skipping Detection #{frame_nr}: missing "
+                f"{'jpg' if not jpg_path else 'json'} path."
+            )
+            continue
         img = cv2.imread(str(jpg_path), cv2.IMREAD_GRAYSCALE)
 
         # raw image often runs into "warning: too many borders in contour_detect (max of 32767!)"
@@ -97,6 +104,11 @@ def get_best_detection(jpg_json_paths, tag_id: int):
                 best_detection = detection
                 break
 
+    if best_detection is None:
+        raise ValueError(
+            "No valid AprilTag detections found. Ensure matching JPG/JSON frame pairs "
+            "exist and the target tag is visible."
+        )
     print(f"Found best detection at #{best_frame_number}!")
     return best_frame_number, best_detection
 
@@ -212,21 +224,38 @@ def cuda_to_tensor_pointcloud(cuda_pc):
 
 
 def render_depth(mesh, camera):
-    vis = o3d.visualization.Visualizer()
-    vis.create_window(width=1920, height=1440, visible=False)
-    vis.add_geometry(mesh)
+    """Render a depth map for the mesh using ray casting to avoid GUI dependencies."""
+    width = camera.intrinsic.width
+    height = camera.intrinsic.height
 
-    view_control = vis.get_view_control()
-    view_control.convert_from_pinhole_camera_parameters(camera, True)
+    tensor_mesh = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
+    scene = o3d.t.geometry.RaycastingScene()
+    scene.add_triangles(tensor_mesh)
 
-    # Capture depth buffer and create depth image
-    depth = np.asarray(vis.capture_depth_float_buffer(True)) * 1000.0
-    depth_scaled = depth.astype(np.uint16)
-    image = np.asarray(vis.capture_screen_float_buffer(True))
+    intrinsic_matrix = np.asarray(
+        camera.intrinsic.intrinsic_matrix, dtype=np.float32
+    )
+    extrinsic_matrix = np.asarray(camera.extrinsic, dtype=np.float32)
+    intrinsic_tensor = o3d.core.Tensor(
+        intrinsic_matrix, dtype=o3d.core.Dtype.Float32
+    )
+    extrinsic_tensor = o3d.core.Tensor(
+        extrinsic_matrix, dtype=o3d.core.Dtype.Float32
+    )
 
-    # Cleanup visualizer and return depth image
-    vis.destroy_window()
-    return depth_scaled, image
+    rays = o3d.t.geometry.RaycastingScene.create_rays_pinhole(
+        intrinsic_matrix=intrinsic_tensor,
+        extrinsic_matrix=extrinsic_tensor,
+        width_px=int(width),
+        height_px=int(height),
+    )
+
+    ray_hits = scene.cast_rays(rays)
+    depth = ray_hits["t_hit"].reshape((int(height), int(width))).numpy()
+    depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+    depth_scaled = (depth * 1000.0).astype(np.uint16)
+
+    return depth_scaled, None
 
 
 def save_ndarray(path: str, array: np.ndarray) -> None:
@@ -370,9 +399,15 @@ def main(argv: list[str] | None = None) -> int:
     intrinsic = None
     for frame_nr, jpg_json_dict in jpg_json_paths.items():
         # get data (image and camera intrinsics)
-        jpg_path = jpg_json_dict["jpg"]
+        jpg_path = jpg_json_dict.get("jpg")
+        json_path = jpg_json_dict.get("json")
+        if not jpg_path or not json_path:
+            print(
+                f"Skipping frame #{frame_nr}: missing "
+                f"{'jpg' if not jpg_path else 'json'} path."
+            )
+            continue
         jpg = cv2.imread(jpg_path)
-        json_path = jpg_json_dict["json"]
         ground_tform_camera = get_ground_tform_camera(json_path)
         ground_tform_camera[:3, :3] = (
             ground_tform_camera[:3, :3] @ corrective_matrix_camera
