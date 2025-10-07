@@ -132,7 +132,48 @@ def main(argv: list[str]) -> int:
         env_colored = o3d.geometry.PointCloud(env_cloud)
         item_colored.paint_uniform_color([1, 0, 1])
         env_colored.paint_uniform_color([0.7, 0.7, 0.7])
-        o3d.visualization.draw_geometries([env_colored, item_colored])
+
+        # Add a coordinate frame at the world origin to show axes.
+        # Size scales with the scene extent for visibility.
+        item_pts = np.asarray(item_colored.points)
+        env_pts = np.asarray(env_colored.points)
+        if item_pts.size and env_pts.size:
+            pts = np.vstack([item_pts, env_pts])
+        elif item_pts.size:
+            pts = item_pts
+        elif env_pts.size:
+            pts = env_pts
+        else:
+            pts = np.zeros((1, 3))
+
+        min_xyz = pts.min(axis=0)
+        max_xyz = pts.max(axis=0)
+        center = (min_xyz + max_xyz) / 2.0
+        scene_diameter = float(np.linalg.norm(max_xyz - min_xyz))
+        axis_size = 0.1 * scene_diameter if scene_diameter > 0 else 0.25
+
+        coord_axes = o3d.geometry.TriangleMesh.create_coordinate_frame(
+            size=axis_size, origin=[0.0, 0.0, 0.0]
+        )
+
+        # Camera placement:
+        # - In Open3D, `front` is the vector from the lookat point
+        #   toward the camera position (i.e., where the camera sits).
+        # - Put the camera on the +X side and slightly above (+Z), so
+        #   the view looks along -X with a small downward tilt.
+        # - Use Z-up convention for the viewer.
+        front = [1.0, 0.0, 0.5]
+        lookat = center.tolist()
+        up = [0.0, 0.0, 1.0]
+        zoom = 0.7
+
+        o3d.visualization.draw_geometries(
+            [env_colored, item_colored, coord_axes],
+            front=front,
+            lookat=lookat,
+            up=up,
+            zoom=zoom,
+        )
 
     return 0
 
