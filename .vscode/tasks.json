@@ -2,11 +2,11 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Prepare OpenMask3D Scene (my_desk)",
+      "label": "Prepare OpenMask3D Scene (scan_name)",
       "type": "shell",
-      "command": "source ~/miniconda3/bin/activate spot_env && python -m scripts.point_cloud_scripts.full_align --scan-name my_desk --skip-autowalk",
+      "command": "source ~/miniconda3/bin/activate spot_env && python -m scripts.point_cloud_scripts.full_align --scan-name ${input:scanName} --skip-autowalk",
       "problemMatcher": [],
-      "detail": "Prepare OpenMask3D scene for my_desk scan",
+      "detail": "Prepare OpenMask3D scene for scan_name scan",
       "presentation": {
         "echo": true,
         "reveal": "always",
@@ -48,11 +48,11 @@
       }
     },
     {
-      "label": "Run Text Segment 3D (my_desk object_name)",
+      "label": "Run Text Segment 3D (scan_name object_name)",
       "type": "shell",
-      "command": "DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc 'source ~/miniconda3/bin/activate spot_env && python -m scripts.temp_scripts.text_segment_3d --item \\\"laptop\\\" --scan-name my_desk'\" &",
+      "command": "DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc 'source ~/miniconda3/bin/activate spot_env && python -m scripts.temp_scripts.text_segment_3d --item \\\"${input:objectName}\\\" --scan-name ${input:scanName}'\" &",
       "problemMatcher": [],
-      "detail": "Run the text_segment_3d temp script for the object_name on the my_desk scan using display :77.",
+      "detail": "Run the text_segment_3d temp script for the object_name on the scan_name scan using display :77.",
       "presentation": {
         "echo": true,
         "reveal": "always",
@@ -76,7 +76,13 @@
       "id": "scanName",
       "type": "promptString",
       "description": "Enter the scan name",
-      "default": ""
+      "default": "my_desk"
+    },
+    {
+      "id": "objectName",
+      "type": "promptString",
+      "description": "Enter the object name",
+      "default": "laptop"
     }
   ]
 }
