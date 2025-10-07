@@ -23,6 +23,29 @@
           ]
         }
       }
+    },
+    {
+      "label": "Prepare OpenMask3D Scene (my_desk)",
+      "type": "shell",
+      "command": "source ~/miniconda3/bin/activate spot_env && python -m scripts.point_cloud_scripts.full_align --scan-name my_desk --skip-autowalk",
+      "problemMatcher": [],
+      "detail": "Prepare OpenMask3D scene for my_desk scan",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "options": {
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-ic"
+          ]
+        }
+      }
     }
   ],
   "inputs": [
