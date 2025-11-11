@@ -27,7 +27,7 @@
     {
       "label": "Launch OpenMask3D Server (GPU)",
       "type": "shell",
-      "command": "source ~/miniconda3/bin/activate robot_compose_env && docker pull craiden/openmask:v1.0 && docker run -p 5001:5001 --gpus all -it craiden/openmask:v1.0 bash -lc \"python3 app.py\"",
+      "command": "source ~/miniconda3/bin/activate robot_compose_env && docker stop $(docker ps -q --filter ancestor=craiden/openmask:v1.0) 2>/dev/null || true && docker pull craiden/openmask:v1.0 && docker run --rm -p 5001:5001 --gpus all -it craiden/openmask:v1.0 bash -lc \"python3 app.py\"",
       "problemMatcher": [],
       "detail": "Pull the OpenMask3D image and start the segmentation server with GPU acceleration. Requires NVIDIA Container Toolkit (run 'Check GPU Docker Setup' first).",
       "presentation": {
@@ -69,6 +69,29 @@
           ]
         }
       }
+    },
+    {
+      "label": "Run Text Segment 3D with Recompute Features (scan_name object_name)",
+      "type": "shell",
+      "command": "DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc 'source ~/miniconda3/bin/activate robot_compose_env && python -m scripts.temp_scripts.text_segment_3d --item \\\"${input:objectName}\\\" --scan-name ${input:scanName} --recompute-features'\" &",
+      "problemMatcher": [],
+      "detail": "Run the text_segment_3d temp script with --recompute-features flag to force fetch features from OpenMask3D server.",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "options": {
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-ic"
+          ]
+        }
+      }
     }
   ],
   "inputs": [
@@ -76,13 +99,13 @@
       "id": "scanName",
       "type": "promptString",
       "description": "Enter the scan name",
-      "default": "my_desk"
+      "default": "office"
     },
     {
       "id": "objectName",
       "type": "promptString",
       "description": "Enter the object name",
-      "default": "laptop"
+      "default": "monitor"
     }
   ]
 }

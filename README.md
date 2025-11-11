@@ -81,10 +81,11 @@ Unpack all archives into `data/prescans/eth3d/office/` (ensure files are extract
 cd source
 python -m scripts.temp_scripts.eth3d_to_openmask \
   --eth3d-root ../data/prescans/eth3d/office \
-  --scan-name office
+  --scan-name office \
+  --overwrite      # optional: replace an existing output folder
 ```
 
-This creates `data/aligned_point_clouds/office/` with 26 images, depth maps, poses, camera intrinsics, and a 429MB point cloud scene. Update `configs/config.yaml`:
+This creates `data/aligned_point_clouds/office/` with 26 images, depth maps, poses, camera intrinsics, and a 429MB point cloud scene. The converter prioritizes the colorized `scan_clean` point clouds, fuses the RGB-D frames when colors are missing, and automatically downsamples extremely dense scenes (target ≈8 M points) so OpenMask3D can fit the masks/features in memory. Update `configs/config.yaml`:
 
 ```yaml
 pre_scanned_graphs:

@@ -35,8 +35,9 @@ Notes:
 import argparse
 import os
 import re
+import shutil
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -180,11 +181,28 @@ def _find_depth_dir(root: Path) -> Path | None:
 
 
 def _find_mesh(root: Path) -> Path | None:
+    """Prefer color-preserving geometry (e.g., scan_clean/*.ply)."""
+
+    candidates: list[tuple[int, Path]] = []
     for ext in (".ply", ".obj"):
         for p in root.rglob(f"*{ext}"):
             if re.search(r"scan|mesh|surface|clean", p.name, re.IGNORECASE):
-                return p
-    return None
+                score = 0
+                lower = p.as_posix().lower()
+                if "clean" in lower:
+                    score += 3
+                if "color" in lower:
+                    score += 2
+                if "eval" in lower:
+                    score -= 1
+                if ext == ".obj":
+                    score += 1  # prefer explicit meshes when available
+                candidates.append((score, p))
+    if not candidates:
+        return None
+    # Highest score wins; fall back to file size (larger first).
+    candidates.sort(key=lambda item: (item[0], item[1].stat().st_size), reverse=True)
+    return candidates[0][1]
 
 
 def _sanitize_name_to_index_map(files: list[Path]) -> Dict[str, int]:
@@ -248,12 +266,55 @@ def _fuse_point_cloud(
     return pcd
 
 
-def convert_eth3d_to_openmask(eth3d_root: Path, scan_name: str) -> Path:
+def _load_colored_point_cloud(path: Path) -> Optional[o3d.geometry.PointCloud]:
+    """Read a point cloud and ensure it carries RGB colors."""
+
+    pcd = o3d.io.read_point_cloud(str(path))
+    if len(pcd.points) == 0:
+        return None
+    if not pcd.has_colors():
+        return None
+    return pcd
+
+
+def _downsample_if_needed(
+    pcd: o3d.geometry.PointCloud,
+    *,
+    target_points: int = 8_000_000,
+    initial_voxel: float = 0.004,
+) -> o3d.geometry.PointCloud:
+    """Voxel-downsample very dense clouds to keep OpenMask memory use in check."""
+
+    if len(pcd.points) <= target_points:
+        return pcd
+
+    voxel = initial_voxel
+    best = pcd
+    while voxel <= 0.02:
+        down = pcd.voxel_down_sample(voxel)
+        if len(down.points) == 0:
+            break
+        best = down
+        if len(down.points) <= target_points:
+            print(f"[eth3d_to_openmask] Downsampled point cloud to {len(down.points)} points (voxel={voxel:.3f}m).")
+            return down
+        voxel += 0.002
+
+    print(
+        f"[eth3d_to_openmask] Could not reach target density; keeping {len(best.points)} points "
+        f"with voxel={voxel - 0.002:.3f}m."
+    )
+    return best
+
+
+def convert_eth3d_to_openmask(eth3d_root: Path, scan_name: str, *, overwrite: bool = False) -> Path:
     cfg = recursive_config.Config()
     out_root = Path(cfg.get_subpath("aligned_point_clouds")) / scan_name
 
     if out_root.exists():
-        raise FileExistsError(f"Output scene already exists: {out_root}")
+        if not overwrite:
+            raise FileExistsError(f"Output scene already exists: {out_root}")
+        shutil.rmtree(out_root)
 
     # Parse calibration and poses
     width, height, K = _read_cameras_txt(eth3d_root / "cameras.txt")
@@ -287,7 +348,7 @@ def convert_eth3d_to_openmask(eth3d_root: Path, scan_name: str) -> Path:
                 continue
             name = cand
         idx = name_to_idx[Path(name).stem]
-        out_name = f"{idx:05d}"
+        out_name = str(idx)
         # preserve original resolution
         img = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
         cv2.imwrite(str(out_color / f"{out_name}.jpg"), img)
@@ -330,26 +391,34 @@ def convert_eth3d_to_openmask(eth3d_root: Path, scan_name: str) -> Path:
     scene_ply = out_root / "scene.ply"
     mesh_obj = out_root / "mesh.obj"
 
+    pcd: Optional[o3d.geometry.PointCloud] = None
     if mesh_path is not None:
         mesh = o3d.io.read_triangle_mesh(str(mesh_path))
-        # Check if it's actually a mesh with triangles or just a point cloud
         if len(mesh.triangles) > 0:
             mesh.compute_vertex_normals()
-            # Save mesh and a sampled point cloud
             o3d.io.write_triangle_mesh(str(mesh_obj), mesh)
             pcd = mesh.sample_points_poisson_disk(number_of_points=500_000)
-            o3d.io.write_point_cloud(str(scene_ply), pcd)
         else:
-            # File is a point cloud, not a mesh - just use it directly
-            pcd = o3d.io.read_point_cloud(str(mesh_path))
-            o3d.io.write_point_cloud(str(scene_ply), pcd)
-    else:
+            pcd = _load_colored_point_cloud(mesh_path)
+            if pcd is None:
+                print(
+                    f"[eth3d_to_openmask] Candidate geometry at {mesh_path} has no RGB colors; "
+                    "falling back to RGB-D fusion."
+                )
+    if pcd is None or not pcd.has_colors():
         if depth_dir is None:
             raise RuntimeError(
-                "No mesh found and no depth directory available to fuse a point cloud."
+                "No colorized geometry found and no depth directory available to fuse a point cloud."
             )
+        print("[eth3d_to_openmask] Fusing RGB-D views to recover colored point cloud...")
         pcd = _fuse_point_cloud(image_files, depth_dir, poses, K)
-        o3d.io.write_point_cloud(str(scene_ply), pcd)
+        if not pcd.has_colors():
+            raise RuntimeError(
+                "RGB-D fusion did not produce colored points; verify ETH3D inputs."
+            )
+
+    pcd = _downsample_if_needed(pcd)
+    o3d.io.write_point_cloud(str(scene_ply), pcd)
 
     return out_root
 
@@ -358,6 +427,11 @@ def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Convert ETH3D scene to OpenMask3D format")
     ap.add_argument("--eth3d-root", required=True, help="Path to unpacked ETH3D scene root")
     ap.add_argument("--scan-name", required=True, help="Name for output scene folder")
+    ap.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite an existing aligned scene folder if it already exists.",
+    )
     return ap.parse_args()
 
 
@@ -366,11 +440,10 @@ def main() -> int:
     eth3d_root = Path(args.eth3d_root).expanduser().resolve()
     if not eth3d_root.exists():
         raise FileNotFoundError(f"ETH3D root not found: {eth3d_root}")
-    out = convert_eth3d_to_openmask(eth3d_root, args.scan_name)
+    out = convert_eth3d_to_openmask(eth3d_root, args.scan_name, overwrite=args.overwrite)
     print(f"Wrote OpenMask3D scene: {out}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

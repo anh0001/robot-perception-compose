@@ -96,11 +96,14 @@ def get_mask_clip_features(
 
     zip_path = Path(zip_point_cloud(str(directory_path)))
 
-    params = {
-        "name": ("str", scan_name),
-        "overwrite": ("bool", overwrite),
-        "scene_intrinsic_resolution": ("str", "[1440,1920]"),
-    }
+    params = [
+        ("name", "str"),
+        ("name", scan_name),
+        ("overwrite", "bool"),
+        ("overwrite", "True" if overwrite else "False"),
+        ("scene_intrinsic_resolution", "str"),
+        ("scene_intrinsic_resolution", "[1440,1920]"),
+    ]
     server_address = _build_server_url(config)
     tmp_dir = Path(config.get_subpath("tmp"))
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -119,9 +122,13 @@ def get_mask_clip_features(
     if response.status_code == 200:
         contents = _get_content(response, tmp_dir)
     else:
-        message = json.loads(response.content)
+        try:
+            message = json.loads(response.content)
+            error_msg = message.get('error', 'Unknown error')
+        except (json.JSONDecodeError, AttributeError):
+            error_msg = response.content.decode('utf-8', errors='replace')[:500]
         raise RuntimeError(
-            f"OpenMask server error ({response.status_code}): {message.get('error')}"
+            f"OpenMask server error ({response.status_code}): {error_msg}"
         )
 
     save_dir.mkdir(parents=True, exist_ok=True)
