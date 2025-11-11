@@ -140,6 +140,9 @@ Useful flags:
 - `--idx`: inspect lower-ranked matches (`0` is the best cosine-similarity score).
 - `--recompute-features`: refreshes the cached masks/features before querying.
 - `--no-vis`: run headless (skip Open3D visualization).
+- You can pass multiple synonyms separated by `,` or `|` (e.g. `--item "monitor|computer screen"`).  
+  The CLI also augments ambiguous prompts (monitor, window, chair, etc.) with richer phrases to
+  reduce the “every query picks the same mask” failure mode.
 
 The script prints basic statistics about the segmented points and, unless suppressed, launches an Open3D window that overlays the object (magenta) and the remaining scene (gray).
 

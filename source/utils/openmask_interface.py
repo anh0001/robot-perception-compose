@@ -20,6 +20,156 @@ from utils.docker_communication import _get_content
 from utils.recursive_config import Config
 
 MODEL, PREPROCESS = clip.load("ViT-L/14@336px", device="cpu")
+MODEL_DEVICE = next(MODEL.parameters()).device
+FEATURE_CACHE_VERSION = 2
+_PROMPT_TEMPLATES: tuple[str, ...] = (
+    "{}",
+    "a photo of {}",
+    "a photo of a {}",
+    "an indoor photo of {}",
+    "a close-up photo of {}",
+    "a detailed scan of {}",
+    "a high quality render of {}",
+)
+_ITEM_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "monitor": ("computer monitor", "computer display", "computer screen", "lcd monitor"),
+    "screen": ("computer screen", "digital display", "lcd screen"),
+    "window": ("glass window", "office window", "sunlit window"),
+    "door": ("wooden door", "glass door", "office door"),
+    "chair": ("office chair", "desk chair", "rolling chair"),
+    "desk": ("office desk", "work desk", "computer desk"),
+    "table": ("dining table", "kitchen table", "office table"),
+    "cabinet": ("storage cabinet", "wooden cabinet", "office cabinet"),
+    "shelf": ("bookshelf", "storage shelf", "wooden shelf"),
+    "drawer": ("desk drawer", "cabinet drawer", "pull-out drawer"),
+    "keyboard": ("computer keyboard", "pc keyboard"),
+    "mouse": ("computer mouse", "pc mouse"),
+    "laptop": ("open laptop", "closed laptop", "notebook computer"),
+    "plant": ("potted plant", "indoor plant"),
+    "whiteboard": ("office whiteboard", "dry erase board"),
+    "poster": ("office poster", "wall poster"),
+    "sofa": ("office sofa", "couch"),
+    "couch": ("living room couch", "office couch"),
+    "trash can": ("garbage bin", "trash bin"),
+    "trash": ("trash can",),
+    "recycling": ("recycling bin",),
+    "tv": ("television", "flat screen tv"),
+    "microwave": ("kitchen microwave",),
+    "fridge": ("refrigerator", "mini fridge"),
+}
+_QUERY_SEPARATORS: tuple[str, ...] = (",", "|")
+
+
+def _metadata_path(directory: Path) -> Path:
+    return directory / "metadata.json"
+
+
+def _write_feature_metadata(directory: Path, *, num_masks: int, num_features: int) -> None:
+    metadata = {
+        "version": FEATURE_CACHE_VERSION,
+        "num_masks": int(num_masks),
+        "num_features": int(num_features),
+    }
+    _metadata_path(directory).write_text(json.dumps(metadata, indent=2))
+
+
+def _load_metadata(directory: Path) -> dict | None:
+    metadata_file = _metadata_path(directory)
+    if not metadata_file.exists():
+        return None
+    try:
+        return json.loads(metadata_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def _needs_cache_upgrade(directory: Path) -> bool:
+    metadata = _load_metadata(directory)
+    if metadata is None:
+        return True
+    return metadata.get("version") != FEATURE_CACHE_VERSION
+
+
+def _write_companion_cache(directory: Path, features: np.ndarray, masks: np.ndarray) -> None:
+    np.save(directory / "clip_features_comp.npy", features)
+    np.save(directory / "scene_MASKS_comp.npy", masks)
+    _write_feature_metadata(
+        directory,
+        num_masks=masks.shape[1],
+        num_features=features.shape[0],
+    )
+
+
+def _rebuild_companion_cache(directory: Path) -> None:
+    feature_src = directory / "clip_features.npy"
+    mask_src = directory / "scene_MASKS.npy"
+    if not feature_src.exists() or not mask_src.exists():
+        raise FileNotFoundError(
+            f"Cannot rebuild OpenMask cache in {directory}: missing base npy files."
+        )
+    shutil.copy2(feature_src, directory / "clip_features_comp.npy")
+    shutil.copy2(mask_src, directory / "scene_MASKS_comp.npy")
+    features = np.load(feature_src, mmap_mode="r")
+    masks = np.load(mask_src, mmap_mode="r")
+    _write_feature_metadata(
+        directory,
+        num_masks=masks.shape[1],
+        num_features=features.shape[0],
+    )
+
+
+def _split_query_terms(item: str) -> list[str]:
+    if not item:
+        return []
+    segments = [item]
+    for separator in _QUERY_SEPARATORS:
+        expanded: list[str] = []
+        for segment in segments:
+            if separator in segment:
+                expanded.extend(segment.split(separator))
+            else:
+                expanded.append(segment)
+        segments = expanded
+    terms = [segment.strip() for segment in segments if segment.strip()]
+    fallback = item.strip()
+    return terms or ([fallback] if fallback else ["object"])
+
+
+def _expand_with_aliases(terms: list[str]) -> list[str]:
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for raw_term in terms:
+        candidates = [raw_term]
+        lookup_key = raw_term.lower()
+        candidates.extend(_ITEM_SYNONYMS.get(lookup_key, ()))
+        for cand in candidates:
+            normalized = cand.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            expanded.append(cand)
+    return expanded
+
+
+def _build_prompt_bank(terms: list[str]) -> list[str]:
+    prompts: list[str] = []
+    for term in terms:
+        for template in _PROMPT_TEMPLATES:
+            prompts.append(template.format(term))
+    return prompts
+
+
+def _encode_text_query(item: str) -> torch.Tensor:
+    """Return a normalized CLIP embedding that averages prompt variants."""
+
+    terms = _split_query_terms(item)
+    terms = _expand_with_aliases(terms)
+    prompts = _build_prompt_bank(terms)
+    tokens = clip.tokenize(prompts).to(MODEL_DEVICE)
+    with torch.no_grad():
+        text_features = MODEL.encode_text(tokens)
+    text_features = torch.nn.functional.normalize(text_features, dim=1)
+    return torch.nn.functional.normalize(text_features.mean(dim=0, keepdim=True), dim=1)
 
 
 def zip_point_cloud(path: str) -> str:
@@ -134,18 +284,11 @@ def get_mask_clip_features(
     save_dir.mkdir(parents=True, exist_ok=True)
     feature_path = save_dir / "clip_features.npy"
     mask_path = save_dir / "scene_MASKS.npy"
-    np.save(feature_path, contents["clip_features"])
-    np.save(mask_path, contents["scene_MASKS"])
-
-    features = np.load(feature_path)
-    masks = np.load(mask_path)
-    features, feat_idx = np.unique(features, axis=0, return_index=True)
-    masks = masks[:, feat_idx]
-    masks, mask_idx = np.unique(masks, axis=1, return_index=True)
-    features = features[mask_idx]
-
-    np.save(save_dir / "clip_features_comp.npy", features)
-    np.save(save_dir / "scene_MASKS_comp.npy", masks)
+    features = np.asarray(contents["clip_features"])
+    masks = np.asarray(contents["scene_MASKS"])
+    np.save(feature_path, features)
+    np.save(mask_path, masks)
+    _write_companion_cache(save_dir, features, masks)
 
     try:
         zip_path.unlink()
@@ -171,6 +314,9 @@ def ensure_mask_clip_features(
     if recompute or not _features_exist(save_dir):
         return get_mask_clip_features(config=config, overwrite=True)
 
+    if _needs_cache_upgrade(save_dir):
+        _rebuild_companion_cache(save_dir)
+
     return save_dir
 
 
@@ -185,21 +331,14 @@ def get_mask_points(item: str, config, idx: int = 0, vis_block: bool = False):
 
     features = np.load(feat_path)
     masks = np.load(mask_path)
-    item = item.lower()
 
-    features, feat_idx = np.unique(features, axis=0, return_index=True)
-    masks = masks[:, feat_idx]
-    # masks, mask_idx = np.unique(masks, axis=1, return_index=True)
-    # features = features[mask_idx]
-
-    text = clip.tokenize([item]).to("cpu")
-
-    # Compute the CLIP feature vector for the specified word
-    with torch.no_grad():
-        text_features = MODEL.encode_text(text)
-
+    feature_tensor = torch.as_tensor(
+        features, dtype=torch.float32, device=MODEL_DEVICE
+    )
+    text_features = _encode_text_query(item)
+    text_features = text_features.to(feature_tensor.device, dtype=feature_tensor.dtype)
     cos_sim = torch.nn.functional.cosine_similarity(
-        torch.Tensor(features), text_features, dim=1
+        feature_tensor, text_features, dim=1
     )
     values, indices = torch.topk(cos_sim, idx + 1)
     most_sim_feat_idx = indices[-1].item()
