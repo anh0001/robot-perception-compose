@@ -92,6 +92,98 @@
           ]
         }
       }
+    },
+    {
+      "label": "Run Text Segment 3D - Focus Item Only (scan_name object_name)",
+      "type": "shell",
+      "command": "DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc 'source ~/miniconda3/bin/activate robot_compose_env && python -m scripts.temp_scripts.text_segment_3d --item \\\"${input:objectName}\\\" --scan-name ${input:scanName} --focus-item --hide-env --point-size 4'\" &",
+      "problemMatcher": [],
+      "detail": "Run text_segment_3d with clean visualization: hide environment, focus on segmented item, and larger point size.",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "options": {
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-ic"
+          ]
+        }
+      }
+    },
+    {
+      "label": "Run Text Segment 3D - Custom Visualization (scan_name object_name)",
+      "type": "shell",
+      "command": "DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc 'source ~/miniconda3/bin/activate robot_compose_env && python -m scripts.temp_scripts.text_segment_3d --item \\\"${input:objectName}\\\" --scan-name ${input:scanName} --point-size ${input:pointSize} ${input:hideEnv} ${input:focusItem}'\" &",
+      "problemMatcher": [],
+      "detail": "Run text_segment_3d with custom visualization options (point size, hide-env, focus-item).",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "options": {
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-ic"
+          ]
+        }
+      }
+    },
+    {
+      "label": "Run Text Segment 3D - Export PLY (scan_name object_name)",
+      "type": "shell",
+      "command": "DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc 'source ~/miniconda3/bin/activate robot_compose_env && python -m scripts.temp_scripts.text_segment_3d --item \\\"${input:objectName}\\\" --scan-name ${input:scanName} --output-dir output/ --no-vis'\" &",
+      "problemMatcher": [],
+      "detail": "Run text_segment_3d and export PLY files to output/ directory without visualization.",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "options": {
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-ic"
+          ]
+        }
+      }
+    },
+    {
+      "label": "Run Text Segment 3D - Multiple Matches (scan_name object_name)",
+      "type": "shell",
+      "command": "DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc 'source ~/miniconda3/bin/activate robot_compose_env && python -m scripts.temp_scripts.text_segment_3d --item \\\"${input:objectName}\\\" --scan-name ${input:scanName} --idx ${input:matchIndex} --focus-item'\" &",
+      "problemMatcher": [],
+      "detail": "Run text_segment_3d with specific match index (0=best, higher=lower-ranked matches).",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "options": {
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-ic"
+          ]
+        }
+      }
     }
   ],
   "inputs": [
@@ -106,6 +198,38 @@
       "type": "promptString",
       "description": "Enter the object name",
       "default": "monitor"
+    },
+    {
+      "id": "pointSize",
+      "type": "promptString",
+      "description": "Enter point size (1-10)",
+      "default": "4"
+    },
+    {
+      "id": "hideEnv",
+      "type": "pickString",
+      "description": "Hide environment cloud?",
+      "options": [
+        "",
+        "--hide-env"
+      ],
+      "default": ""
+    },
+    {
+      "id": "focusItem",
+      "type": "pickString",
+      "description": "Focus camera on item?",
+      "options": [
+        "",
+        "--focus-item"
+      ],
+      "default": ""
+    },
+    {
+      "id": "matchIndex",
+      "type": "promptString",
+      "description": "Match index (0=best, higher=lower-ranked)",
+      "default": "0"
     }
   ]
 }

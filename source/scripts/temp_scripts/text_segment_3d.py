@@ -71,6 +71,22 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Disable the Open3D visualization window.",
     )
+    parser.add_argument(
+        "--hide-env",
+        action="store_true",
+        help="Do not render the background environment cloud in Open3D.",
+    )
+    parser.add_argument(
+        "--focus-item",
+        action="store_true",
+        help="Frame the Open3D camera tightly around the segmented item instead of the full scan.",
+    )
+    parser.add_argument(
+        "--point-size",
+        type=float,
+        default=3.0,
+        help="Point size (in pixels) used for Open3D rendering.",
+    )
     return parser.parse_args(argv)
 
 
@@ -95,6 +111,95 @@ def _print_stats(cloud: o3d.geometry.PointCloud, label: str) -> None:
     print(
         f"{label}: {points.shape[0]} points | centroid=({centroid[0]:.3f}, {centroid[1]:.3f}, {centroid[2]:.3f})",
     )
+
+
+def _collect_points(clouds: list[o3d.geometry.PointCloud]) -> np.ndarray:
+    pts = [np.asarray(cloud.points) for cloud in clouds if len(cloud.points)]
+    if not pts:
+        return np.zeros((1, 3))
+    return np.vstack(pts)
+
+
+def _create_box_wireframe(
+    cloud: o3d.geometry.PointCloud,
+    color: tuple[float, float, float],
+    oriented: bool,
+) -> o3d.geometry.Geometry:
+    if oriented:
+        box = cloud.get_oriented_bounding_box()
+    else:
+        box = cloud.get_axis_aligned_bounding_box()
+    box.color = color
+    return box
+
+
+def _visualize_clouds(
+    item_cloud: o3d.geometry.PointCloud,
+    env_cloud: o3d.geometry.PointCloud,
+    *,
+    focus_item: bool,
+    hide_env: bool,
+    point_size: float,
+) -> None:
+    item_colored = o3d.geometry.PointCloud(item_cloud)
+    env_colored = o3d.geometry.PointCloud(env_cloud)
+    item_colored.paint_uniform_color([1.0, 0.0, 1.0])
+    env_colored.paint_uniform_color([0.72, 0.72, 0.72])
+
+    geometries: list[o3d.geometry.Geometry] = []
+    focus_candidates: list[o3d.geometry.PointCloud] = []
+
+    if not hide_env and len(env_colored.points):
+        geometries.append(env_colored)
+        geometries.append(_create_box_wireframe(env_colored, (0.55, 0.55, 0.55), oriented=False))
+        focus_candidates.append(env_colored)
+
+    if len(item_colored.points):
+        geometries.append(item_colored)
+        geometries.append(_create_box_wireframe(item_colored, (0.95, 0.2, 0.95), oriented=True))
+        focus_candidates.append(item_colored)
+
+    if not geometries:
+        print("Nothing to visualize — both clouds are empty.")
+        return
+
+    pts = _collect_points(focus_candidates if focus_item and focus_candidates else [item_colored, env_colored])
+    min_xyz = pts.min(axis=0)
+    max_xyz = pts.max(axis=0)
+    center = (min_xyz + max_xyz) / 2.0
+    scene_extent = float(np.linalg.norm(max_xyz - min_xyz))
+    if scene_extent < 1e-6:
+        scene_extent = 1.0
+
+    axis_size = 0.12 * scene_extent
+    coord_axes = o3d.geometry.TriangleMesh.create_coordinate_frame(
+        size=axis_size if axis_size > 0 else 0.25, origin=[0.0, 0.0, 0.0]
+    )
+    geometries.append(coord_axes)
+
+    vis = o3d.visualization.Visualizer()
+    vis.create_window(window_name="Text Segment 3D", width=1280, height=720)
+    for geom in geometries:
+        vis.add_geometry(geom)
+
+    render_option = vis.get_render_option()
+    if render_option:
+        render_option.point_size = max(1.0, point_size)
+        render_option.background_color = np.array([0.98, 0.98, 0.98])
+
+    view_ctl = vis.get_view_control()
+    front = np.array([1.0, 0.0, 0.45])
+    front /= np.linalg.norm(front)
+    view_ctl.set_front(front.tolist())
+    view_ctl.set_lookat(center.tolist())
+    view_ctl.set_up([0.0, 0.0, 1.0])
+    zoom = np.clip(1.5 / scene_extent, 0.25, 0.85)
+    if focus_item:
+        zoom = min(0.95, zoom * 1.25)
+    view_ctl.set_zoom(float(zoom))
+
+    vis.run()
+    vis.destroy_window()
 
 
 def main(argv: list[str]) -> int:
@@ -128,51 +233,12 @@ def main(argv: list[str]) -> int:
         print(f"Saved environment cloud to {env_path}")
 
     if not args.no_vis:
-        item_colored = o3d.geometry.PointCloud(item_cloud)
-        env_colored = o3d.geometry.PointCloud(env_cloud)
-        item_colored.paint_uniform_color([1, 0, 1])
-        env_colored.paint_uniform_color([0.7, 0.7, 0.7])
-
-        # Add a coordinate frame at the world origin to show axes.
-        # Size scales with the scene extent for visibility.
-        item_pts = np.asarray(item_colored.points)
-        env_pts = np.asarray(env_colored.points)
-        if item_pts.size and env_pts.size:
-            pts = np.vstack([item_pts, env_pts])
-        elif item_pts.size:
-            pts = item_pts
-        elif env_pts.size:
-            pts = env_pts
-        else:
-            pts = np.zeros((1, 3))
-
-        min_xyz = pts.min(axis=0)
-        max_xyz = pts.max(axis=0)
-        center = (min_xyz + max_xyz) / 2.0
-        scene_diameter = float(np.linalg.norm(max_xyz - min_xyz))
-        axis_size = 0.1 * scene_diameter if scene_diameter > 0 else 0.25
-
-        coord_axes = o3d.geometry.TriangleMesh.create_coordinate_frame(
-            size=axis_size, origin=[0.0, 0.0, 0.0]
-        )
-
-        # Camera placement:
-        # - In Open3D, `front` is the vector from the lookat point
-        #   toward the camera position (i.e., where the camera sits).
-        # - Put the camera on the +X side and slightly above (+Z), so
-        #   the view looks along -X with a small downward tilt.
-        # - Use Z-up convention for the viewer.
-        front = [1.0, 0.0, 0.5]
-        lookat = center.tolist()
-        up = [0.0, 0.0, 1.0]
-        zoom = 0.7
-
-        o3d.visualization.draw_geometries(
-            [env_colored, item_colored, coord_axes],
-            front=front,
-            lookat=lookat,
-            up=up,
-            zoom=zoom,
+        _visualize_clouds(
+            item_cloud,
+            env_cloud,
+            focus_item=args.focus_item,
+            hide_env=args.hide_env,
+            point_size=args.point_size,
         )
 
     return 0
