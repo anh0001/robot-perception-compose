@@ -103,7 +103,7 @@ def take_control_with_function(
     logger.log("Robot started")
 
     # Setup adapted from github.com/boston-dynamics/spot-sdk/blob/master/python/examples/hello_spot/hello_spot.py
-    spot_env_config = environment.get_environment_config(config, ["spot"])
+    robot_compose_env_config = environment.get_environment_config(config, ["spot"])
     robot_config = config["robot_parameters"]
     sdk = bosdyn_client.create_standard_sdk("understanding-spot")
 
@@ -112,7 +112,7 @@ def take_control_with_function(
 
     # setup robot
     global robot
-    robot.set_instance(sdk.create_robot(spot_env_config["wifi_default_address"]))
+    robot.set_instance(sdk.create_robot(robot_compose_env_config["wifi_default_address"]))
     environment.set_robot_password(config)
     bosdyn_util.authenticate(robot)
 

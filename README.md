@@ -11,8 +11,8 @@ The workflow below runs entirely on a workstation—no Spot robot or GraspNet se
 ## 1. Environment Setup
 
 ```bash
-python3.8 -m venv venv
-source venv/bin/activate
+conda env create -f environment.yml
+conda activate robot_compose_env
 pip install -r requirements.txt
 ```
 
@@ -66,6 +66,32 @@ python -m scripts.point_cloud_scripts.full_align \
 Output folder: `data/aligned_point_clouds/<scan-name>/`, containing `pose/`, `color/`, `depth/`, `intrinsic/`, `scene.ply`, and `mesh.obj`.
 
 > If you also have a Spot autowalk point cloud, drop it under `data/point_clouds/` and omit `--skip-autowalk` to enable ICP alignment. Otherwise the scene is left in the coordinate frame defined by the AprilTag.
+
+### Using ETH3D Office instead of iPhone scans
+
+If you prefer a public dataset, use the ETH3D "office" scene. Download the following archives from https://www.eth3d.net/datasets:
+
+- `office_dslr_undistorted.7z` (images)
+- `office_dslr_depth.7z` (ground truth depth maps, stored as binary float32 with .JPG extension)
+- `office_dslr_scan_eval.7z` or `office_scan_clean.7z` (calibration, poses, and point cloud)
+
+Unpack all archives into `data/prescans/eth3d/office/` (ensure files are extracted directly into this folder, not into a nested `office/office/` subdirectory). Then convert to OpenMask3D format:
+
+```bash
+cd source
+python -m scripts.temp_scripts.eth3d_to_openmask \
+  --eth3d-root ../data/prescans/eth3d/office \
+  --scan-name office
+```
+
+This creates `data/aligned_point_clouds/office/` with 26 images, depth maps, poses, camera intrinsics, and a 429MB point cloud scene. Update `configs/config.yaml`:
+
+```yaml
+pre_scanned_graphs:
+  high_res: "office"
+```
+
+You can now skip the iPhone alignment step and proceed to launching OpenMask3D and running text segmentation.
 
 ## 4. Launch the OpenMask3D Server
 

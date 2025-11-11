@@ -66,8 +66,8 @@ def main(argv):
 
     # Create robot object
     sdk = bosdyn.client.create_standard_sdk("estop_nogui")
-    spot_env_config = environment.get_environment_config(config, ["spot"])
-    robot = sdk.create_robot(spot_env_config["wifi_default_address"])
+    robot_compose_env_config = environment.get_environment_config(config, ["spot"])
+    robot = sdk.create_robot(robot_compose_env_config["wifi_default_address"])
     environment.set_robot_password(config)
     bosdyn.client.util.authenticate(robot)
 

@@ -1,4 +1,4 @@
-name: spot-mask-3d
+name: robot_compose_env
 channels:
     - defaults
     - open3d-admin
