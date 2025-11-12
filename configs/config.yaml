@@ -11,7 +11,7 @@ robot_parameters:
   verbose: False
 
 # device used by Open3D importer
-device: "cpu"
+device: "cuda"
 
 pre_scanned_graphs:
   base_fiducial_id: 52

@@ -146,6 +146,21 @@ Useful flags:
 
 The script prints basic statistics about the segmented points and, unless suppressed, launches an Open3D window that overlays the object (magenta) and the remaining scene (gray).
 
+**VS Code Task**: `Run Text Segment 3D - Index Range (scan_name object_name)`
+
+This task quickly visualizes multiple ranked matches (indices 0-5 by default) in separate windows, useful for exploring ambiguous queries or verifying the top results:
+
+```
+Scan name: my_desk
+Object queries to try:
+  - "Laptop on desk"
+  - "Monitor on desk"
+  - "Owl doll on desk"
+Max index: 5 (shows top 6 matches in separate xterm windows)
+```
+
+Each window displays a different ranked match with `--focus-item` enabled for cleaner visualization.
+
 ## Repository Layout
 
 ```

@@ -184,6 +184,29 @@
           ]
         }
       }
+    },
+    {
+      "label": "Run Text Segment 3D - Index Range (scan_name object_name)",
+      "type": "shell",
+      "command": "bash -ic 'source ~/miniconda3/bin/activate robot_compose_env && MAX_IDX=${input:maxIndex} && for i in $(seq 0 $MAX_IDX); do DISPLAY=:77 XAUTHORITY=$HOME/.Xauthority xterm -hold -e \"bash -lc '\"'\"'source ~/miniconda3/bin/activate robot_compose_env && python -m scripts.temp_scripts.text_segment_3d --item \\\"${input:objectName}\\\" --scan-name ${input:scanName} --idx $i --focus-item'\"'\"'\" & sleep 0.5; done'",
+      "problemMatcher": [],
+      "detail": "Run text_segment_3d for multiple indices (0 to maxIndex) in separate xterm windows, showing all ranked matches.",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "options": {
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-ic"
+          ]
+        }
+      }
     }
   ],
   "inputs": [
@@ -230,6 +253,12 @@
       "type": "promptString",
       "description": "Match index (0=best, higher=lower-ranked)",
       "default": "0"
+    },
+    {
+      "id": "maxIndex",
+      "type": "promptString",
+      "description": "Maximum index to run up to (0 to maxIndex)",
+      "default": "5"
     }
   ]
 }
