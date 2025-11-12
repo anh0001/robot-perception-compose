@@ -19,7 +19,7 @@ from utils import recursive_config
 from utils.docker_communication import _get_content
 from utils.recursive_config import Config
 
-MODEL, PREPROCESS = clip.load("ViT-L/14@336px", device="cpu")
+MODEL, PREPROCESS = clip.load("ViT-L/14@336px", device="cuda")
 MODEL_DEVICE = next(MODEL.parameters()).device
 FEATURE_CACHE_VERSION = 2
 _PROMPT_TEMPLATES: tuple[str, ...] = (
